@@ -293,15 +293,20 @@ plot_decomposition(stl_d, var = "y", outliers = TRUE)
 
 
 ```{r}
+source("./functions.R")
 result <- record_piecewise_search(
     data = stl_d,
     time_col = "index",
     value_col = "trend",
-    max_knots = 5,
-    min_segment_length = 25,
+    max_knots = 3,
+    min_segment_length = 20,
     grid_resolution = 10,
     output_dir = "animation_frames",
-    fps = 3)
+    fps = 2,
+    max_frames = Inf,   # All frames
+    dpi = 90,          # Very high quality PNGs
+    gif_width = 600     # Large GIF frames
+    )
 ```
 
 ```{r}
