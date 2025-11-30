@@ -825,42 +825,28 @@ record_piecewise_search <- function(data,
         ))
     }
 
-    # Automatically adjust parameters based on frame count to avoid segfaults
+    # Automatically adjust image size based on frame count to avoid segfaults
+    # Note: We do NOT subsample frames - user wants all frames
     n_frames_original <- length(png_files)
 
-    # Determine safe limits based on available resources
+    # Determine safe image size based on frame count
     # ImageMagick tends to crash with large frame counts + large sizes
     if (n_frames_original > 150) {
-        # For very large frame counts, force subsampling
-        safe_max_frames <- min(max_frames, 80)
-        safe_gif_width <- min(gif_width, 400)
+        # For very large frame counts, reduce image size significantly
+        safe_gif_width <- min(gif_width, 300)
 
-        cat("\n⚠️  Large frame count detected (", n_frames_original, " frames)\n")
-        cat("To prevent crashes, adjusting parameters:\n")
-        cat("  - Max frames:", safe_max_frames, "(original:", max_frames, ")\n")
-        cat("  - GIF width:", safe_gif_width, "px (original:", gif_width, "px)\n\n")
-
-        max_frames <- safe_max_frames
-        gif_width <- safe_gif_width
+        if (safe_gif_width < gif_width) {
+            cat("\n⚠️  Large frame count detected (", n_frames_original, " frames)\n")
+            cat("To prevent crashes, reducing GIF width to:", safe_gif_width, "px (original:", gif_width, "px)\n\n")
+            gif_width <- safe_gif_width
+        }
     } else if (n_frames_original > 100) {
-        # For moderate frame counts, reduce size
-        safe_gif_width <- min(gif_width, 500)
+        # For moderate frame counts, reduce size moderately
+        safe_gif_width <- min(gif_width, 400)
         if (safe_gif_width < gif_width) {
             cat("\n⚠️  Adjusting GIF width to", safe_gif_width, "px to handle", n_frames_original, "frames\n\n")
             gif_width <- safe_gif_width
         }
-    }
-
-    # Subsample frames if there are too many (for memory efficiency)
-    if (length(png_files) > max_frames) {
-        cat("⚠️  Subsampling from", length(png_files), "to", max_frames, "frames...\n")
-
-        # Always keep first and last frame
-        indices <- c(1, round(seq(2, length(png_files) - 1, length.out = max_frames - 2)), length(png_files))
-        indices <- unique(sort(indices))
-        png_files <- png_files[indices]
-
-        cat("Selected", length(png_files), "frames for animation\n\n")
     }
 
     # Create GIF using magick
