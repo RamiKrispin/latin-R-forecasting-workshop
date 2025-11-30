@@ -1142,6 +1142,9 @@ plot_residuals <- function(data,
         acf = as.numeric(acf_result$acf)
     )
 
+    # Remove lag 0
+    acf_data <- acf_data[acf_data$lag > 0, ]
+
     # Calculate confidence interval
     ci <- qnorm(1 - alpha / 2) / sqrt(nrow(data))
 
