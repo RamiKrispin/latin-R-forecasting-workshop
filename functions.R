@@ -825,16 +825,42 @@ record_piecewise_search <- function(data,
         ))
     }
 
+    # Automatically adjust parameters based on frame count to avoid segfaults
+    n_frames_original <- length(png_files)
+
+    # Determine safe limits based on available resources
+    # ImageMagick tends to crash with large frame counts + large sizes
+    if (n_frames_original > 150) {
+        # For very large frame counts, force subsampling
+        safe_max_frames <- min(max_frames, 80)
+        safe_gif_width <- min(gif_width, 400)
+
+        cat("\n⚠️  Large frame count detected (", n_frames_original, " frames)\n")
+        cat("To prevent crashes, adjusting parameters:\n")
+        cat("  - Max frames:", safe_max_frames, "(original:", max_frames, ")\n")
+        cat("  - GIF width:", safe_gif_width, "px (original:", gif_width, "px)\n\n")
+
+        max_frames <- safe_max_frames
+        gif_width <- safe_gif_width
+    } else if (n_frames_original > 100) {
+        # For moderate frame counts, reduce size
+        safe_gif_width <- min(gif_width, 500)
+        if (safe_gif_width < gif_width) {
+            cat("\n⚠️  Adjusting GIF width to", safe_gif_width, "px to handle", n_frames_original, "frames\n\n")
+            gif_width <- safe_gif_width
+        }
+    }
+
     # Subsample frames if there are too many (for memory efficiency)
     if (length(png_files) > max_frames) {
-        cat("\n⚠️  Too many frames (", length(png_files), "). Subsampling to", max_frames, "frames...\n")
+        cat("⚠️  Subsampling from", length(png_files), "to", max_frames, "frames...\n")
 
         # Always keep first and last frame
         indices <- c(1, round(seq(2, length(png_files) - 1, length.out = max_frames - 2)), length(png_files))
         indices <- unique(sort(indices))
         png_files <- png_files[indices]
 
-        cat("Selected", length(png_files), "frames for animation\n")
+        cat("Selected", length(png_files), "frames for animation\n\n")
     }
 
     # Create GIF using magick
@@ -929,15 +955,21 @@ record_piecewise_search <- function(data,
         }
 
         # Animate with variable delays
+        # Disable optimization for large frame counts to prevent segfaults
+        use_optimize <- n_frames <= 60
+        if (!use_optimize) {
+            cat("⚠️  Disabling GIF optimization due to large frame count (", n_frames, " frames)\n")
+        }
         cat("Applying animation (this may take a while)...\n")
-        animated <- magick::image_animate(frames, delay = delays / 100, optimize = TRUE)
+        animated <- magick::image_animate(frames, delay = delays / 100, optimize = use_optimize)
 
         # Clear frames from memory immediately
         rm(frames, delays)
         invisible(gc(full = TRUE))
 
         # Write GIF
-        cat("Writing GIF to disk...\n")
+        cat("Writing GIF to disk (", n_frames, " frames at ", gif_width, "px)...\n", sep = "")
+        cat("This may take a moment...\n")
         magick::image_write(animated, path = gif_path, format = "gif")
 
         # Clear animated from memory
@@ -1000,9 +1032,9 @@ record_piecewise_search <- function(data,
             # Final cleanup
             invisible(gc(full = TRUE))
 
-            # Use simple fps
-            cat("Animating with simple fps...\n")
-            animated <- magick::image_animate(frames, fps = 2, optimize = TRUE)
+            # Use simple fps, no optimization to avoid crashes
+            cat("Animating with simple fps (no optimization)...\n")
+            animated <- magick::image_animate(frames, fps = 2, optimize = FALSE)
 
             rm(frames)
             invisible(gc(full = TRUE))
