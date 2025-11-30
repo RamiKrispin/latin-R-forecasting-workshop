@@ -825,28 +825,13 @@ record_piecewise_search <- function(data,
         ))
     }
 
-    # Automatically adjust image size based on frame count to avoid segfaults
-    # Note: We do NOT subsample frames - user wants all frames
+    # Note: Using all frames with user-specified width
+    # Warning about potential issues with large frame counts
     n_frames_original <- length(png_files)
 
-    # Determine safe image size based on frame count
-    # ImageMagick tends to crash with large frame counts + large sizes
-    if (n_frames_original > 150) {
-        # For very large frame counts, reduce image size significantly
-        safe_gif_width <- min(gif_width, 300)
-
-        if (safe_gif_width < gif_width) {
-            cat("\n⚠️  Large frame count detected (", n_frames_original, " frames)\n")
-            cat("To prevent crashes, reducing GIF width to:", safe_gif_width, "px (original:", gif_width, "px)\n\n")
-            gif_width <- safe_gif_width
-        }
-    } else if (n_frames_original > 100) {
-        # For moderate frame counts, reduce size moderately
-        safe_gif_width <- min(gif_width, 400)
-        if (safe_gif_width < gif_width) {
-            cat("\n⚠️  Adjusting GIF width to", safe_gif_width, "px to handle", n_frames_original, "frames\n\n")
-            gif_width <- safe_gif_width
-        }
+    if (n_frames_original > 150 && gif_width > 400) {
+        cat("\n⚠️  Warning: Large frame count (", n_frames_original, " frames) with large width (", gif_width, "px)\n")
+        cat("This may cause ImageMagick to crash. Consider using smaller gif_width if issues occur.\n\n")
     }
 
     # Create GIF using magick
