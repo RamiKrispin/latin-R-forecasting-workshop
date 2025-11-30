@@ -35,6 +35,12 @@
         {
             "package": "camcorder",
             "version": "0.1.0"
+        },
+        {
+            "package": "magick",
+            "version": "2.9.0"
         }
+
+        
     ]
 }

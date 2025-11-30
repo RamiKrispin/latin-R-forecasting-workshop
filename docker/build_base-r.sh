@@ -16,7 +16,7 @@ venv_name="r-dev"
 
 # Setting the image name
 ver=${r_major}.${r_minor}.${r_patch}
-tag="0.0.1"
+tag="0.0.2"
 docker_file=Dockerfile.base-r
 image_name=$user_name/$image_label-$ver:$tag
 

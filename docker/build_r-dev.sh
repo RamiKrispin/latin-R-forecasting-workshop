@@ -8,7 +8,7 @@ image_label="latin-r-workshop"
 
 
 # Setting the image name
-ver=0.0.1
+ver=0.0.2
 docker_file=Dockerfile.r-dev
 image_name=$user_name/$image_label:$ver
 

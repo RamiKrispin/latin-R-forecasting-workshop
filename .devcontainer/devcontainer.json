@@ -1,6 +1,6 @@
 {
     "name": "LatinR Workshop",
-    "image": "docker.io/rkrispin/latin-r-workshop:0.0.1",
+    "image": "docker.io/rkrispin/latin-r-workshop:0.0.2",
     "customizations": {
         "vscode": {
             "extensions": [
