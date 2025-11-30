@@ -21,7 +21,7 @@ The EIA API is a great resource for time series data. It provides access to vari
 
 <br>
 <br /><figure>
- <img src="images/eia_api.png" width="100%" align="center"/></a>
+ <img src="assets/eia_api.png" width="100%" align="center"/></a>
 <figcaption> The EIA website</figcaption>
 </figure>
 
