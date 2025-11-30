@@ -1071,8 +1071,11 @@ plot_residuals <- function(data,
     # Calculate residuals
     data$residuals <- data[[actual_col]] - data[[fitted_col]]
 
+    # Remove NA values for diagnostic plots
+    residuals_clean <- na.omit(data$residuals)
+
     # Calculate SD
-    sd_res <- sd(data$residuals)
+    sd_res <- sd(residuals_clean)
 
     # 1. Actual vs Fitted plot
     p_actual_fitted <- plot_ly() |>
@@ -1136,7 +1139,7 @@ plot_residuals <- function(data,
         )
 
     # 3. ACF Plot
-    acf_result <- acf(data$residuals, lag.max = lag_max, plot = FALSE)
+    acf_result <- acf(residuals_clean, lag.max = lag_max, plot = FALSE)
     acf_data <- data.frame(
         lag = as.numeric(acf_result$lag),
         acf = as.numeric(acf_result$acf)
@@ -1145,8 +1148,8 @@ plot_residuals <- function(data,
     # Remove lag 0
     acf_data <- acf_data[acf_data$lag > 0, ]
 
-    # Calculate confidence interval
-    ci <- qnorm(1 - alpha / 2) / sqrt(nrow(data))
+    # Calculate confidence interval (use length of clean residuals)
+    ci <- qnorm(1 - alpha / 2) / sqrt(length(residuals_clean))
 
     p_acf <- plot_ly(type = "bar") |>
         add_trace(
@@ -1177,10 +1180,10 @@ plot_residuals <- function(data,
         )
 
     # 4. Q-Q Plot
-    n <- length(data$residuals)
+    n <- length(residuals_clean)
     theoretical_quantiles <- qnorm(ppoints(n))
-    sample_quantiles <- sort(data$residuals)
-    standardized_res <- (sample_quantiles - mean(data$residuals)) / sd(data$residuals)
+    sample_quantiles <- sort(residuals_clean)
+    standardized_res <- (sample_quantiles - mean(residuals_clean)) / sd(residuals_clean)
 
     p_qq <- plot_ly() |>
         add_trace(
@@ -1203,10 +1206,10 @@ plot_residuals <- function(data,
         )
 
     # 5. Density Plot
-    density_res <- density(data$residuals)
-    mean_res <- mean(data$residuals)
-    sd_res_density <- sd(data$residuals)
-    x_norm <- seq(min(data$residuals), max(data$residuals), length.out = 100)
+    density_res <- density(residuals_clean)
+    mean_res <- mean(residuals_clean)
+    sd_res_density <- sd(residuals_clean)
+    x_norm <- seq(min(residuals_clean), max(residuals_clean), length.out = 100)
     y_norm <- dnorm(x_norm, mean = mean_res, sd = sd_res_density)
 
     p_density <- plot_ly() |>
