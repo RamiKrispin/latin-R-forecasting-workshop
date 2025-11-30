@@ -1089,7 +1089,8 @@ plot_residuals <- function(data,
         layout(
             yaxis = list(title = "Value"),
             xaxis = list(title = ""),
-            showlegend = TRUE
+            showlegend = TRUE,
+            legend = list(orientation = "h")
         )
 
     # 2. Residuals with SD lines
