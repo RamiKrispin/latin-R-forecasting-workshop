@@ -1047,3 +1047,209 @@ record_piecewise_search <- function(data,
         frames_captured = length(png_files)
     ))
 }
+
+
+#' Plot Residuals Diagnostics
+#'
+#' Creates a comprehensive residual diagnostic plot with actual vs fitted,
+#' residuals with SD lines, ACF plot, Q-Q plot, and density plot.
+#'
+#' @param data A data frame containing the time series data
+#' @param index_col Name of the index/time column (as string)
+#' @param actual_col Name of the actual values column (as string)
+#' @param fitted_col Name of the fitted values column (as string)
+#' @param lag_max Maximum number of lags for ACF plot (default: 60)
+#' @param alpha Significance level for confidence intervals (default: 0.05)
+#'
+#' @return A plotly subplot object with residual diagnostic plots
+plot_residuals <- function(data,
+                          index_col,
+                          actual_col,
+                          fitted_col,
+                          lag_max = 60,
+                          alpha = 0.05) {
+    # Calculate residuals
+    data$residuals <- data[[actual_col]] - data[[fitted_col]]
+
+    # Calculate SD
+    sd_res <- sd(data$residuals)
+
+    # 1. Actual vs Fitted plot
+    p_actual_fitted <- plot_ly() |>
+        add_lines(
+            x = data[[index_col]], y = data[[actual_col]],
+            name = "Actual",
+            line = list(color = "#0072B5")
+        ) |>
+        add_lines(
+            x = data[[index_col]], y = data[[fitted_col]],
+            name = "Fitted",
+            line = list(color = "black", dash = "dash")
+        ) |>
+        layout(
+            yaxis = list(title = "Value"),
+            xaxis = list(title = ""),
+            showlegend = TRUE
+        )
+
+    # 2. Residuals with SD lines
+    p_residuals <- plot_ly() |>
+        add_trace(
+            x = data[[index_col]], y = data$residuals,
+            type = "scatter", mode = "markers",
+            name = "Residuals",
+            marker = list(color = "#0072B5"),
+            showlegend = FALSE
+        ) |>
+        add_segments(
+            x = min(data[[index_col]]), xend = max(data[[index_col]]),
+            y = 2 * sd_res, yend = 2 * sd_res,
+            line = list(color = "orange", dash = "dash", width = 2),
+            name = "+2SD",
+            showlegend = FALSE
+        ) |>
+        add_segments(
+            x = min(data[[index_col]]), xend = max(data[[index_col]]),
+            y = -2 * sd_res, yend = -2 * sd_res,
+            line = list(color = "orange", dash = "dash", width = 2),
+            name = "-2SD",
+            showlegend = FALSE
+        ) |>
+        add_segments(
+            x = min(data[[index_col]]), xend = max(data[[index_col]]),
+            y = 3 * sd_res, yend = 3 * sd_res,
+            line = list(color = "red", dash = "dash", width = 2),
+            name = "+3SD",
+            showlegend = FALSE
+        ) |>
+        add_segments(
+            x = min(data[[index_col]]), xend = max(data[[index_col]]),
+            y = -3 * sd_res, yend = -3 * sd_res,
+            line = list(color = "red", dash = "dash", width = 2),
+            name = "-3SD",
+            showlegend = FALSE
+        ) |>
+        layout(
+            yaxis = list(title = "Residuals"),
+            xaxis = list(title = "")
+        )
+
+    # 3. ACF Plot
+    acf_result <- acf(data$residuals, lag.max = lag_max, plot = FALSE)
+    acf_data <- data.frame(
+        lag = as.numeric(acf_result$lag),
+        acf = as.numeric(acf_result$acf)
+    )
+
+    # Calculate confidence interval
+    ci <- qnorm(1 - alpha / 2) / sqrt(nrow(data))
+
+    p_acf <- plot_ly(type = "bar") |>
+        add_trace(
+            x = acf_data$lag, y = acf_data$acf,
+            marker = list(
+                color = "#0072B5",
+                line = list(color = "rgb(8,48,107)", width = 1.5)
+            ),
+            name = "ACF",
+            showlegend = FALSE
+        ) |>
+        add_segments(
+            x = min(acf_data$lag), xend = max(acf_data$lag),
+            y = ci, yend = ci,
+            line = list(color = "black", dash = "dash"),
+            name = "95% CI",
+            showlegend = FALSE
+        ) |>
+        add_segments(
+            x = min(acf_data$lag), xend = max(acf_data$lag),
+            y = -ci, yend = -ci,
+            line = list(color = "black", dash = "dash"),
+            showlegend = FALSE
+        ) |>
+        layout(
+            yaxis = list(title = "ACF"),
+            xaxis = list(title = "Lag")
+        )
+
+    # 4. Q-Q Plot
+    n <- length(data$residuals)
+    theoretical_quantiles <- qnorm(ppoints(n))
+    sample_quantiles <- sort(data$residuals)
+    standardized_res <- (sample_quantiles - mean(data$residuals)) / sd(data$residuals)
+
+    p_qq <- plot_ly() |>
+        add_trace(
+            x = theoretical_quantiles, y = standardized_res,
+            type = "scatter", mode = "markers",
+            marker = list(color = "#0072B5", size = 6, opacity = 0.6),
+            name = "Sample",
+            showlegend = FALSE
+        ) |>
+        add_trace(
+            x = theoretical_quantiles, y = theoretical_quantiles,
+            type = "scatter", mode = "lines",
+            line = list(color = "red", dash = "dash", width = 2),
+            name = "Normal",
+            showlegend = FALSE
+        ) |>
+        layout(
+            yaxis = list(title = "Sample Quantiles"),
+            xaxis = list(title = "Theoretical Quantiles")
+        )
+
+    # 5. Density Plot
+    density_res <- density(data$residuals)
+    mean_res <- mean(data$residuals)
+    sd_res_density <- sd(data$residuals)
+    x_norm <- seq(min(data$residuals), max(data$residuals), length.out = 100)
+    y_norm <- dnorm(x_norm, mean = mean_res, sd = sd_res_density)
+
+    p_density <- plot_ly() |>
+        add_trace(
+            x = density_res$x, y = density_res$y,
+            type = "scatter", mode = "lines",
+            fill = "tozeroy",
+            fillcolor = "rgba(0, 114, 181, 0.3)",
+            line = list(color = "#0072B5", width = 2),
+            name = "Density",
+            showlegend = FALSE
+        ) |>
+        add_trace(
+            x = x_norm, y = y_norm,
+            type = "scatter", mode = "lines",
+            line = list(color = "red", dash = "dash", width = 2),
+            name = "Normal",
+            showlegend = FALSE
+        ) |>
+        layout(
+            yaxis = list(title = "Density"),
+            xaxis = list(title = "Residuals")
+        )
+
+    # Create third row with 3 plots side by side
+    row3 <- subplot(
+        p_acf, p_qq, p_density,
+        nrows = 1,
+        shareX = FALSE,
+        shareY = FALSE,
+        titleX = TRUE,
+        titleY = TRUE
+    )
+
+    # Combine all rows
+    subplot_result <- subplot(
+        p_actual_fitted,
+        p_residuals,
+        row3,
+        nrows = 3,
+        heights = c(0.25, 0.25, 0.5),
+        shareX = FALSE,
+        shareY = FALSE,
+        titleY = TRUE,
+        titleX = TRUE
+    ) |>
+        layout(title = "Residual Plots")
+
+    return(subplot_result)
+}
