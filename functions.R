@@ -296,6 +296,7 @@ plot_lag <- function(ts, var, lag) {
 #' @param grid_resolution Number of candidate positions per knot (default: 20)
 #' @param record_search Logical; if TRUE, plots each configuration for camcorder recording (default: FALSE)
 #' @param plot_dir Directory to save plots if record_search is TRUE (default: NULL uses tempdir)
+#' @param plot_dpi DPI for saving plots (default: 80)
 #'
 #' @return List with optimal model, knot positions, BIC scores, and fitted values
 piecewise_regression <- function(data,
@@ -306,7 +307,8 @@ piecewise_regression <- function(data,
                                  edge_buffer = 0.05,
                                  grid_resolution = 20,
                                  record_search = FALSE,
-                                 plot_dir = NULL) {
+                                 plot_dir = NULL,
+                                 plot_dpi = 80) {
     # Prepare data
     df <- data %>%
         arrange(!!sym(time_col)) %>%
@@ -539,7 +541,7 @@ piecewise_regression <- function(data,
                         plot = p,
                         width = 8,
                         height = 6,
-                        dpi = 100,
+                        dpi = plot_dpi,
                         device = "png"
                     )
                     cat("  Saved frame", config_count, "to", basename(frame_file), "\n")
@@ -710,6 +712,9 @@ plot_bic_scores <- function(result) {
 #' @param width Plot width in pixels (default: 800)
 #' @param height Plot height in pixels (default: 600)
 #' @param fps Frames per second for GIF (default: 2)
+#' @param max_frames Maximum number of frames in GIF, will subsample if exceeded (default: 100)
+#' @param dpi DPI for saving PNG frames, higher = better quality but larger files (default: 80)
+#' @param gif_width Width in pixels for GIF frames, smaller = faster processing (default: 400)
 #'
 #' @return List with piecewise regression results and path to GIF
 #'
@@ -739,7 +744,10 @@ record_piecewise_search <- function(data,
                                    gif_name = "grid_search.gif",
                                    width = 800,
                                    height = 600,
-                                   fps = 2) {
+                                   fps = 2,
+                                   max_frames = 100,
+                                   dpi = 80,
+                                   gif_width = 400) {
     # Check if magick is installed
     if (!requireNamespace("magick", quietly = TRUE)) {
         stop("Package 'magick' is required. Install it with: install.packages('magick')")
@@ -780,6 +788,7 @@ record_piecewise_search <- function(data,
 
     # Run piecewise regression with recording enabled
     cat("\n=== Running grid search ===\n")
+    cat("PNG quality: ", dpi, " DPI\n")
     result <- piecewise_regression(
         data = data,
         time_col = time_col,
@@ -789,7 +798,8 @@ record_piecewise_search <- function(data,
         edge_buffer = edge_buffer,
         grid_resolution = grid_resolution,
         record_search = TRUE,
-        plot_dir = output_dir
+        plot_dir = output_dir,
+        plot_dpi = dpi  # Pass DPI parameter
     )
 
     # Check if any frames were captured
@@ -815,32 +825,217 @@ record_piecewise_search <- function(data,
         ))
     }
 
+    # Subsample frames if there are too many (for memory efficiency)
+    if (length(png_files) > max_frames) {
+        cat("\n⚠️  Too many frames (", length(png_files), "). Subsampling to", max_frames, "frames...\n")
+
+        # Always keep first and last frame
+        indices <- c(1, round(seq(2, length(png_files) - 1, length.out = max_frames - 2)), length(png_files))
+        indices <- unique(sort(indices))
+        png_files <- png_files[indices]
+
+        cat("Selected", length(png_files), "frames for animation\n")
+    }
+
     # Create GIF using magick
     cat("\n=== Creating GIF with magick ===\n")
+
+    # Check memory availability
+    cat("\n=== Memory Check ===\n")
+    mem_info <- gc(reset = TRUE)
+    cat("R memory before GIF creation:\n")
+    print(mem_info)
+
     gif_path <- file.path(output_dir, gif_name)
 
-    # Read all frames
-    frames <- magick::image_read(png_files)
+    # Remove old GIF if it exists
+    if (file.exists(gif_path)) {
+        file.remove(gif_path)
+    }
 
-    # Set delays (in 1/100ths of a second)
-    delay_frames <- 100 / fps  # Normal frames
-    delay_first <- 300  # 3 seconds for first frame
-    delay_last <- 500   # 5 seconds for last frame
+    # For very large frame counts, use batch processing
+    n_frames_total <- length(png_files)
+    batch_size <- 20  # Process 20 frames at a time (reduced from 50)
+    use_batch_mode <- n_frames_total > batch_size
 
-    # Create vector of delays
-    n_frames <- length(frames)
-    delays <- rep(delay_frames, n_frames)
-    delays[1] <- delay_first
-    delays[n_frames] <- delay_last
+    if (use_batch_mode) {
+        cat("\n⚡ Using batch mode for", n_frames_total, "frames (processing", batch_size, "at a time)\n")
+    }
 
-    # Animate with specified delays
-    animated <- magick::image_animate(frames, delay = delays, optimize = TRUE)
+    tryCatch({
+        if (use_batch_mode) {
+            # One-at-a-time processing mode to avoid ImageMagick cache exhaustion
+            cat("Reading and processing frames one at a time (to avoid cache exhaustion)...\n")
 
-    # Write GIF
-    magick::image_write(animated, path = gif_path, format = "gif")
+            frames <- NULL
 
-    cat("\n✅ Animation saved to:", gif_path, "\n")
-    cat("📊 Total frames captured:", length(png_files), "\n\n")
+            for (i in 1:n_frames_total) {
+                if (i %% 10 == 1) {
+                    cat("  Processing frame", i, "of", n_frames_total, "...\n")
+                }
+
+                # Read ONE frame at a time
+                single_frame <- magick::image_read(png_files[i])
+
+                # Resize IMMEDIATELY to minimize cache usage
+                single_frame <- magick::image_scale(single_frame, paste0(gif_width, "x"))
+
+                # Append to frames collection
+                if (is.null(frames)) {
+                    frames <- single_frame
+                } else {
+                    frames <- c(frames, single_frame)
+                }
+
+                # Clear the single frame
+                rm(single_frame)
+
+                # Garbage collect every 10 frames
+                if (i %% 10 == 0) {
+                    invisible(gc(full = TRUE))
+                }
+            }
+
+            # Final cleanup
+            invisible(gc(full = TRUE))
+
+        } else {
+            # Standard mode for fewer frames
+            cat("Reading", length(png_files), "frames...\n")
+            frames <- magick::image_read(png_files)
+
+            # Resize frames to reduce memory usage
+            cat("Resizing frames to", gif_width, "px width...\n")
+            frames <- magick::image_scale(frames, paste0(gif_width, "x"))
+        }
+
+        # Get number of frames
+        n_frames <- length(frames)
+        cat("Total frames ready:", n_frames, "\n")
+
+        # Calculate delay in 1/100ths of a second
+        delay_normal <- round(100 / fps)  # Delay for normal frames
+        delay_first <- 300   # 3 seconds for first frame
+        delay_last <- 500    # 5 seconds for last frame
+
+        # Build animation
+        cat("Building animation with delays...\n")
+
+        # Create delay vector
+        delays <- rep(delay_normal, n_frames)
+        delays[1] <- delay_first
+        if (n_frames > 1) {
+            delays[n_frames] <- delay_last
+        }
+
+        # Animate with variable delays
+        cat("Applying animation (this may take a while)...\n")
+        animated <- magick::image_animate(frames, delay = delays / 100, optimize = TRUE)
+
+        # Clear frames from memory immediately
+        rm(frames, delays)
+        invisible(gc(full = TRUE))
+
+        # Write GIF
+        cat("Writing GIF to disk...\n")
+        magick::image_write(animated, path = gif_path, format = "gif")
+
+        # Clear animated from memory
+        rm(animated)
+        invisible(gc(full = TRUE))
+
+        # Verify the file was created and has content
+        if (file.exists(gif_path) && file.size(gif_path) > 0) {
+            cat("\n✅ Animation saved to:", gif_path, "\n")
+            cat("📊 Frames in GIF:", n_frames, "\n")
+            cat("📦 GIF size:", round(file.size(gif_path) / 1024^2, 2), "MB\n")
+
+            # Show final memory usage
+            cat("\n=== Memory after GIF creation ===\n")
+            print(gc())
+            cat("\n")
+        } else {
+            stop("GIF file is empty or was not created")
+        }
+
+    }, error = function(e) {
+        cat("\n⚠️  Error creating GIF:", e$message, "\n")
+        cat("Trying fallback method with smaller frames and batch processing...\n\n")
+
+        tryCatch({
+            # Simpler fallback: smaller size, smaller batches
+            fallback_width <- max(200, round(gif_width * 0.75))
+            cat("Using fallback width:", fallback_width, "px\n")
+
+            # Process one frame at a time for fallback
+            cat("Processing", length(png_files), "frames one at a time (fallback method)...\n")
+
+            frames <- NULL
+
+            for (i in 1:length(png_files)) {
+                if (i %% 10 == 1) {
+                    cat("  Fallback processing frame", i, "of", length(png_files), "...\n")
+                }
+
+                # Read ONE frame at a time
+                single_frame <- magick::image_read(png_files[i])
+
+                # Resize IMMEDIATELY with smaller size
+                single_frame <- magick::image_scale(single_frame, paste0(fallback_width, "x"))
+
+                # Append to frames collection
+                if (is.null(frames)) {
+                    frames <- single_frame
+                } else {
+                    frames <- c(frames, single_frame)
+                }
+
+                # Clear and collect garbage every 5 frames (more aggressive)
+                rm(single_frame)
+                if (i %% 5 == 0) {
+                    invisible(gc(full = TRUE))
+                }
+            }
+
+            # Final cleanup
+            invisible(gc(full = TRUE))
+
+            # Use simple fps
+            cat("Animating with simple fps...\n")
+            animated <- magick::image_animate(frames, fps = 2, optimize = TRUE)
+
+            rm(frames)
+            invisible(gc(full = TRUE))
+
+            cat("Writing fallback GIF...\n")
+            magick::image_write(animated, path = gif_path, format = "gif")
+
+            rm(animated)
+            invisible(gc(full = TRUE))
+
+            # Verify
+            if (file.exists(gif_path) && file.size(gif_path) > 0) {
+                cat("\n✅ Animation saved to:", gif_path, "(using fallback method)\n")
+                cat("📊 Frames in GIF:", length(png_files), "\n")
+                cat("📦 GIF size:", round(file.size(gif_path) / 1024^2, 2), "MB\n\n")
+            } else {
+                stop("Fallback also failed to create GIF")
+            }
+
+        }, error = function(e2) {
+            warning(
+                "Failed to create GIF: ", e2$message, "\n",
+                "PNG frames are available at: ", normalizePath(output_dir), "\n",
+                "You can manually create the GIF using an external tool or ffmpeg."
+            )
+            return(list(
+                regression_result = result,
+                gif_path = NULL,
+                frames_dir = output_dir,
+                frames_captured = length(list.files(output_dir, pattern = "^frame_.*\\.png$"))
+            ))
+        })
+    })
 
     return(list(
         regression_result = result,
