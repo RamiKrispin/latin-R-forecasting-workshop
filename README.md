@@ -15,6 +15,7 @@ This workshop is for practitioners (data analysts/scientists) who wish to learn 
 
 
 When 📆: December 1th, 2025 from 9am to 11am PST
+
 Where 📌: Online
 Tickets: https://www.eventbrite.cl/e/forecasting-with-regression-models-tickets-1955640717029
 

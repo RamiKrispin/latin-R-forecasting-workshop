@@ -292,6 +292,22 @@ plot_decomposition(stl_d, var = "y", outliers = TRUE)
 ```
 
 
+```{r}
+result <- record_piecewise_search(
+    data = stl_d,
+    time_col = "index",
+    value_col = "trend",
+    max_knots = 5,
+    min_segment_length = 25,
+    grid_resolution = 10,
+    output_dir = "animation_frames",
+    fps = 3)
+```
+
+```{r}
+browseURL(result$gif_path)
+```
+```
 We will build the features step-by-step to review the impact of each feature on the goodness of fit. Let's start by defining the trend feature:
 
 ```{r}
@@ -370,6 +386,43 @@ plot_ly(x = ts2$date, y = ts2$res2, type = "scatter", mode = "markers")
 And the ACF of the residuals:
 ```{r}
 plot_acf(ts = ts2, var = "res2", lag_max = 60, frequency = NULL, alpha = 0.05)
+```
+
+
+
+
+```{r}
+pw <- piecewise_regression(
+    data = ts1,
+    time_col = "index",
+    value_col = "y",
+    max_knots = 2,
+    min_segment_length = 11,
+    edge_buffer = 0.05,
+    grid_resolution = 20
+)
+
+plot_bic_scores(pw)
+```
+
+```{r}
+source("./functions.R")
+```
+
+```{r}
+result <- record_piecewise_search(
+    data = ts1,
+    time_col = "index",
+    value_col = "y",
+    max_knots = 2,
+    min_segment_length = 11,
+    grid_resolution = 10,
+    output_dir = "animation_frames",
+    fps = 3)
+```
+
+```{r}
+browseURL(result$gif_path)
 ```
 
 
