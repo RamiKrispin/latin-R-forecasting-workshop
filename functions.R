@@ -1079,18 +1079,69 @@ plot_residuals <- function(data,
     # Calculate SD
     sd_res <- sd(residuals_clean)
 
+    # Classify fitted values based on residual magnitude for color coding
+    data$residual_category <- ifelse(abs(data$residuals) < 2 * sd_res, "normal",
+                                     ifelse(abs(data$residuals) < 3 * sd_res, "medium", "high"))
+
     # 1. Actual vs Fitted plot
-    p_actual_fitted <- plot_ly() |>
+    p_actual_fitted <- plot_ly()
+
+    # Add actual values line
+    p_actual_fitted <- p_actual_fitted |>
         add_lines(
             x = data[[index_col]], y = data[[actual_col]],
             name = "Actual",
-            line = list(color = "#0072B5")
-        ) |>
-        add_lines(
-            x = data[[index_col]], y = data[[fitted_col]],
-            name = "Fitted",
-            line = list(color = "black", dash = "dash")
-        ) |>
+            line = list(color = "#0072B5"),
+            showlegend = TRUE
+        )
+
+    # Add fitted values as scatter points, color-coded by residual category
+    # Normal fitted values (light blue)
+    normal_idx <- which(data$residual_category == "normal")
+    if (length(normal_idx) > 0) {
+        p_actual_fitted <- p_actual_fitted |>
+            add_trace(
+                x = data[[index_col]][normal_idx],
+                y = data[[fitted_col]][normal_idx],
+                type = "scatter",
+                mode = "markers",
+                marker = list(color = "rgba(135, 206, 250, 0.6)", size = 6),
+                name = "Fitted",
+                showlegend = TRUE
+            )
+    }
+
+    # Medium outliers (orange)
+    medium_idx <- which(data$residual_category == "medium")
+    if (length(medium_idx) > 0) {
+        p_actual_fitted <- p_actual_fitted |>
+            add_trace(
+                x = data[[index_col]][medium_idx],
+                y = data[[fitted_col]][medium_idx],
+                type = "scatter",
+                mode = "markers",
+                marker = list(color = "orange", size = 6),
+                name = "Fitted (2-3 SD)",
+                showlegend = TRUE
+            )
+    }
+
+    # High outliers (red)
+    high_idx <- which(data$residual_category == "high")
+    if (length(high_idx) > 0) {
+        p_actual_fitted <- p_actual_fitted |>
+            add_trace(
+                x = data[[index_col]][high_idx],
+                y = data[[fitted_col]][high_idx],
+                type = "scatter",
+                mode = "markers",
+                marker = list(color = "red", size = 6),
+                name = "Fitted (>3 SD)",
+                showlegend = TRUE
+            )
+    }
+
+    p_actual_fitted <- p_actual_fitted |>
         layout(
             yaxis = list(title = "Value"),
             xaxis = list(title = ""),
