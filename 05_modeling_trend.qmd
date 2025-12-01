@@ -1,0 +1,646 @@
+---
+title: "Modeling Trend"
+author: "Rami Krispin"
+date: last-modified
+format: 
+    html:
+        code-fold: false
+        warning: false
+        toc: true
+---
+
+After reviewing the core methods for analyzing time series patterns using decomposition, correlation, and seasonal plots, in this notebook we will build our first forecasting model, focusing on modeling trend. To simplify the process, we will start with a time series that has **no seasonal components or other complex patterns**. Later, we will extend these ideas to series that include both trend and seasonality, as well as those affected by outliers.
+
+## Modeling Linear Trend
+
+Before diving into the modeling process, let's start with the definition of trend:
+
+> A trend in a time series is the long-term, systematic movement or direction in the data over time. It reflects persistent increases or decreases in the series that are not due to short-term fluctuations, randomness, or seasonal patterns. Trends can be linear—changing at a constant rate—or nonlinear, accelerating or decelerating as time progresses. Identifying the trend helps isolate the underlying structural behavior of the series and forms the foundation for many forecasting models, especially those that assume the future will continue to follow the same long-term direction observed in the past.
+
+Trends can take linear or nonlinear forms. A linear trend has a constant rate of change, meaning that the series grows (or declines) by the same amount at each time step. From a mathematical perspective, a linear trend’s slope represents the **marginal change in the series with respect to time**.
+
+Let's load the California number of natural gas consumers and start building a forecasting model.
+
+## Setup
+
+Let's start by loading the required libraries and source the workshop functions:
+```{r}
+#| label: setup
+library(feasts)
+library(fabletools)
+library(tsibble)
+library(dplyr)
+library(plotly)
+
+source("./functions.R")
+```
+
+Next, let's load the datasets:
+```{r}
+#| label: load the data
+
+load(file = "./data/ts.RData")
+```
+
+And plot it:
+
+```{r}
+ts1 <- ts1 |>
+    dplyr::filter(index > 1986)
+
+
+p <- plot_ly() |>
+    add_lines(x = ts1$index, y = ts1$y, type = "scatter", mode = "lines", name = "Actual") |>
+    plotly::layout(
+        title = "Number of Natural Gas Consumers in California",
+        yaxis = list(title = "Number of Consumers"),
+        xaxis = list(title = "Period")
+    )
+
+p
+```
+
+### Modeling a Simple Trend
+
+As mentioned above, trend is equivalent (when having linear trend) to the marginal change in the series over time. Therefore, to model the trend we can regress the series against the series index:
+
+$$ 
+Y \textasciitilde Index 
+$$
+
+Where the Index is simply a vector if numbers that increase as a function of time:
+
+$$
+Index = [1,2,3,...N], ~for ~a ~series ~with ~N ~observations
+$$
+
+Let's add to the series an trend feature:
+
+```{r}
+ts1$trend <- 1:nrow(ts1)
+
+ts1 |> head()
+```
+
+
+Let's now set a regression model:
+
+```{r}
+md1 <- lm(y ~ trend, data = ts1)
+
+summary(md1)
+```
+
+
+
+We will fit the model on the series to see the trend fit:
+
+```{r}
+fit1 <- predict(object = md1, newdata = ts1, interval = "confidence", level = 0.95)
+ts1$fit1 <- fit1[, 1]
+p1 <- p |>
+    add_lines(x = ts1$index, y = ts1$fit1, mode = "lines", line = list(color = "black", dash = "dash"), name = "Fitted")
+
+p1
+```
+
+
+
+### Residuals Analysis
+
+Once a linear regression model is fitted to a time series, residual analysis is essential for verifying whether the model has adequately captured the underlying structure of the data. The goal is to ensure that the remaining errors—what the model could not explain—behave like white noise: uncorrelated, constant-variance, zero-mean noise with no remaining pattern. If the residuals are not white noise, the model is missing structure such as trend, seasonality, or autocorrelation, and the forecasts may be biased or unreliable.
+
+To evaluate these assumptions, we use a set of diagnostic plots:
+
+**Actual vs Fitted Plot**
+
+This plot compares the original series to the model’s fitted values.
+
+- **Goal:** Detect whether the model captured the main trend (and seasonality, if included).
+- **What to look for:**
+    - The fitted line should track the general shape of the actual data.
+    - Systematic deviations—such as fitted values consistently lagging behind the actual series—suggest underfitting or missing components.
+- Common issues revealed: Remaining trend, seasonal patterns, or structural changes.
+
+**Residuals ACF Plot**
+
+The autocorrelation function (ACF) of residuals checks whether errors are correlated over time.
+
+- **Goal:** Verify the assumption of no autocorrelation in residuals.
+- **What to look for:**
+  - All autocorrelations should fall within the confidence bands (no significant spikes).
+  - Significant autocorrelation indicates that:
+        - the model did not fully capture the time dependence, or
+        - additional lagged terms, ARIMA errors, or differencing may be needed.
+- **Why it matters:** Autocorrelated errors imply that the model’s predictions could be improved by modeling the remaining serial dependence.
+
+**Residual Distribution Plots (Density and Q-Q Plots)**
+
+These plots assess whether residuals behave like noise with constant variance and approximately normal distribution.
+
+- **Density Plot:**
+  - Shows the empirical distribution of residuals.
+  - **Goal:** Check for skewness, heavy tails, or multimodality.
+  - **What to look for:** A roughly symmetric, bell-shaped curve.
+- **Q-Q Plot:**
+  - Compares the residuals to a theoretical normal distribution.
+  - **Goal:** Assess normality and identify outliers.
+  - **What to look for:** Points lying close to the diagonal line.
+  - Common issues revealed:
+    - Heavy tails → potential outliers
+    - Systematic curvature → non-normal residuals or model misspecification
+
+
+Let's start by calculating the model residuals: 
+
+```{r}
+ts1$res1 <- ts1$y - ts1$fit1
+
+plot_ly(x = ts1$index, y = ts1$res1, type = "scatter", mode = "markers")
+```
+
+If would be nice to add the standard deviation of the residuals:
+
+```{r}
+# Calculate residual standard deviation
+sd_res1 <- sd(ts1$res1)
+
+plot_ly(x = ts1$index, y = ts1$res1, type = "scatter", mode = "markers", name = "Residuals") |>
+    # Add +2SD line
+    add_segments(
+        x = min(ts1$index), xend = max(ts1$index),
+        y = 2 * sd_res1, yend = 2 * sd_res1,
+        line = list(color = "orange", dash = "dash", width = 2),
+        name = "+2SD",
+        showlegend = TRUE
+    ) |>
+    # Add -2SD line
+    add_segments(
+        x = min(ts1$index), xend = max(ts1$index),
+        y = -2 * sd_res1, yend = -2 * sd_res1,
+        line = list(color = "orange", dash = "dash", width = 2),
+        name = "-2SD",
+        showlegend = FALSE,
+        legendgroup = "2SD"
+    ) |>
+    # Add +3SD line
+    add_segments(
+        x = min(ts1$index), xend = max(ts1$index),
+        y = 3 * sd_res1, yend = 3 * sd_res1,
+        line = list(color = "red", dash = "dash", width = 2),
+        name = "+3SD",
+        showlegend = TRUE
+    ) |>
+    # Add -3SD line
+    add_segments(
+        x = min(ts1$index), xend = max(ts1$index),
+        y = -3 * sd_res1, yend = -3 * sd_res1,
+        line = list(color = "red", dash = "dash", width = 2),
+        name = "-3SD",
+        showlegend = FALSE,
+        legendgroup = "3SD"
+    ) |>
+    plotly::layout(
+        yaxis = list(title = "Residuals"),
+        xaxis = list(title = "Index")
+    )
+```
+
+Clearly, you can see that some patterns are left in the residuals. 
+
+
+
+
+
+
+We can check for autocorrelation:
+
+```{r}
+plot_acf(ts = ts1, var = "res1", lag_max = 60, frequency = NULL, alpha = 0.05)
+
+```
+
+The ACF plot indicates that the residuals have a high correlation with the first lags. This is classic case, that adding an ARIMA model (i.e., regression with ARIMA errors) could improve the fit of the model.
+
+The last component that we want to check is the distribution of the residual:
+
+#### Residual Distribution
+
+Let's create a density plot to evaluate if the residuals are normally distributed:
+
+```{r}
+# Calculate density
+density_res <- density(ts1$res1)
+
+# Create density plot
+p_density <- plot_ly() |>
+    add_trace(
+        x = density_res$x,
+        y = density_res$y,
+        type = "scatter",
+        mode = "lines",
+        fill = "tozeroy",
+        fillcolor = "rgba(0, 114, 181, 0.3)",
+        line = list(color = "#0072B5", width = 2),
+        name = "Residual Density"
+    ) |>
+    plotly::layout(
+        title = "Distribution of Residuals",
+        xaxis = list(title = "Residuals"),
+        yaxis = list(title = "Density"),
+        showlegend = TRUE
+    )
+
+# Overlay normal distribution for comparison
+mean_res <- mean(ts1$res1)
+sd_res <- sd(ts1$res1)
+x_norm <- seq(min(ts1$res1), max(ts1$res1), length.out = 100)
+y_norm <- dnorm(x_norm, mean = mean_res, sd = sd_res)
+
+p_density <- p_density |>
+    add_trace(
+        x = x_norm,
+        y = y_norm,
+        type = "scatter",
+        mode = "lines",
+        line = list(color = "red", dash = "dash", width = 2),
+        name = "Normal Distribution"
+    )
+
+p_density
+```
+
+The density plot shows the distribution of residuals (blue) overlaid with a theoretical normal distribution (red dashed line) with the same mean and standard deviation. If the residuals were perfectly normally distributed, the two curves would align closely.
+
+#### Q-Q Plot
+
+A Q-Q (quantile-quantile) plot provides another way to assess normality by comparing the quantiles of the residuals against the quantiles of a theoretical normal distribution:
+
+```{r}
+# Calculate theoretical quantiles
+n <- length(ts1$res1)
+theoretical_quantiles <- qnorm(ppoints(n))
+
+# Calculate sample quantiles (sorted residuals)
+sample_quantiles <- sort(ts1$res1)
+
+# Standardize the residuals for comparison
+standardized_res <- (sample_quantiles - mean(ts1$res1)) / sd(ts1$res1)
+
+# Create Q-Q plot
+p_qq <- plot_ly() |>
+    add_trace(
+        x = theoretical_quantiles,
+        y = standardized_res,
+        type = "scatter",
+        mode = "markers",
+        marker = list(color = "#0072B5", size = 6, opacity = 0.6),
+        name = "Sample Quantiles"
+    ) |>
+    add_trace(
+        x = theoretical_quantiles,
+        y = theoretical_quantiles,
+        type = "scatter",
+        mode = "lines",
+        line = list(color = "red", dash = "dash", width = 2),
+        name = "Normal Reference Line"
+    ) |>
+    plotly::layout(
+        title = "Q-Q Plot: Residuals vs Normal Distribution",
+        xaxis = list(title = "Theoretical Quantiles"),
+        yaxis = list(title = "Sample Quantiles (Standardized)"),
+        showlegend = TRUE
+    )
+
+p_qq
+```
+
+In a Q-Q plot, if the residuals follow a normal distribution, the points should fall approximately along the red reference line. Deviations from this line indicate departures from normality. Points curving away at the tails suggest heavy-tailed or skewed distributions. 
+
+
+The `plot_residuals` function returns all the plots together:
+```{r}
+#| fig-width: 15
+#| fig-height: 18
+plot_residuals(
+    data = ts1,
+    index_col = "index",
+    actual_col = "y",
+    fitted_col = "fit1",
+    lag_max = 60,
+    alpha = 0.05
+)
+```
+
+
+
+We can noticed from the residuals and ACF plots that the model goodness of fit improved with the addition of a second trend feature. Yet, the ACF plot indicate that some correlation left on the residuals within the first lag. An AR model with order 1 can help to remove this correlation.
+
+## Create a Forecast
+
+Once we have trained the model on our series, we can use the model object to forecast the series' future. The main requirement is to create the future data frame with the same features we used to train the model. 
+
+In the case of the above model, we need to create a future data frame with the continuous elements of the trend feature. Let's assume we want to predict the next 5 years:
+
+```{r}
+h <- 5
+```
+
+Next, we use the `new_data` function from the **tsibble** library to create a continues data frame with the series future index:
+
+```{r}
+future_data <- new_data(ts1, n = h)
+future_data
+```
+
+Let's now add the trend:
+
+```{r}
+tail(ts1)
+trend_start <- max(ts1$trend) + 1
+future_data$trend <- trend_start:(trend_start + h - 1)
+future_data
+
+```
+
+Let's now use the `predict.lm` function to generate the forecast:
+
+```{r}
+fc1 <- predict(
+    object = md1,
+    newdata = future_data,
+    interval = "prediction",
+    level = 0.95
+)
+
+future_data$yhat <- fc1[, 1]
+future_data$lower <- fc1[, 2]
+future_data$upper <- fc1[, 3]
+future_data
+```
+
+
+Let's plot the forecast
+```{r}
+p1 |>
+    add_ribbons(
+        x = future_data$index, ymin = future_data$lower,
+        ymax = future_data$upper, name = "95% Prediction Interval",
+        line = list(color = "rgba(7, 164, 181, 0.05)"),
+        fillcolor = "rgba(7, 164, 181, 0.2)"
+    ) |>
+    add_lines(
+        x = future_data$index,
+        y = future_data$yhat,
+        name = "Forecast",
+        line = list(color = "black", dash = "dash")
+    )
+```
+
+That does not look like a great model...🥴
+
+
+## Improving the model
+
+Reviewing the results, there are two features we can use to improve the forecast:
+
+- Piecewise linear trend
+- Adding AR model 
+- Combing both approaches
+
+
+### Piecewise Linear Trend
+
+Eyeballing the series, you can notice a change in the trend at around 2008. We will use this information to create a piecewise linear trend.
+
+```{r}
+s <- ts1$trend[which(ts1$index == 2008)]
+ts1$trend2 <- pmax(0, ts1$trend - s)
+
+md2 <- lm(y ~ trend + trend2, data = ts1)
+
+summary(md2)
+
+```
+
+Let's fit the model and plot it:
+
+```{r}
+fit2 <- predict(object = md2, newdata = ts1, interval = "confidence", level = 0.95)
+ts1$fit2 <- fit2[, 1]
+p2 <- p |>
+    add_lines(x = ts1$index, y = ts1$fit2, mode = "lines", line = list(color = "black", dash = "dash"), name = "Fitted")
+p2
+```
+
+We will add to the plot the features:
+
+```{r}
+trend1 <- plot_ly() |>
+    add_lines(x = ts1$index, y = ts1$trend, name = "Main Trend Feature")
+
+trend2 <- plot_ly() |>
+    add_lines(x = ts1$index, y = ts1$trend2, name = "Piecewise Trend Feature")
+```
+
+
+```{r}
+#| fig-height: 10
+subplot(p2, trend1, trend2, nrows = 3)
+
+```
+
+Let's check the model residuals:
+
+```{r}
+#| fig-width: 15
+#| fig-height: 18
+plot_residuals(
+    data = ts1,
+    index_col = "index",
+    actual_col = "y",
+    fitted_col = "fit2",
+    lag_max = 60,
+    alpha = 0.05
+)
+```
+
+Let's update the future data frame with the new feature and create a forecast:
+
+```{r}
+trend_start2 <- max(ts1$trend2) + 1
+future_data$trend2 <- trend_start2:(trend_start2 + h - 1)
+future_data
+```
+
+
+```{r}
+fc2 <- predict(
+    object = md2,
+    newdata = future_data,
+    interval = "prediction",
+    level = 0.95
+)
+
+future_data$yhat2 <- fc2[, 1]
+future_data$lower2 <- fc2[, 2]
+future_data$upper2 <- fc2[, 3]
+future_data
+```
+
+
+Let's plot the forecast
+```{r}
+p2 |>
+    add_ribbons(
+        x = future_data$index, ymin = future_data$lower2,
+        ymax = future_data$upper2, name = "95% Prediction Interval",
+        line = list(color = "rgba(7, 164, 181, 0.05)"),
+        fillcolor = "rgba(7, 164, 181, 0.2)"
+    ) |>
+    add_lines(
+        x = future_data$index,
+        y = future_data$yhat2,
+        name = "Forecast",
+        line = list(color = "black", dash = "dash")
+    )
+```
+
+Looks much better! 😎
+
+
+### AR model
+
+The Auto Regressive (AR) model is a common approach in time series forecasting to model time series with high correlation with its past lags. The AR model is part of a family of models that construct the ARIMA family of models.
+
+At its core, AR model is a regression of the series with its previous lags. For example, AR 1 model would be a regression of the series with its lag one:
+
+$$
+Y_t = \beta_0 + \beta_1 * Y_{t-1} 
+$$
+
+Let's update the above model formula:
+
+$$
+Y_t = \beta_0 + \beta_1 * trend +  \beta_2 * Y_{t-1} 
+$$
+
+
+And create a lag 1 feature:
+
+```{r}
+ts1$lag1 <- dplyr::lag(ts1$y, n = 1)
+
+ts1
+```
+
+
+Let's now fit the model:
+
+```{r}
+md3 <- lm(y ~ trend + lag1, data = ts1)
+
+fit3 <- predict(object = md3, newdata = ts1, interval = "confidence", level = 0.95)
+ts1$fit3 <- fit3[, 1]
+
+summary(md3)
+```
+
+
+```{r}
+p3 <- p |>
+    add_lines(x = ts1$index, y = ts1$fit3, mode = "lines", line = list(color = "black", dash = "dash"), name = "Fitted")
+p3
+```
+
+
+Let's check the model residuals:
+
+```{r}
+#| fig-width: 15
+#| fig-height: 18
+plot_residuals(
+    data = ts1,
+    index_col = "index",
+    actual_col = "y",
+    fitted_col = "fit3",
+    lag_max = 60,
+    alpha = 0.05
+)
+```
+
+
+Using lags in our model requires us to use a recursive function to create a forecast if the lag index is smaller than forecast horizon. In the above example, we train a model with lag 1, this mean we can use the last observation in the actual series as the first lag in the future data frame:
+
+```{r}
+future_data$lag1 <- c(ts1$y[nrow(ts1)], rep(NA, 4))
+future_data
+```
+
+Let's now create a place holder for the forecast fields:
+
+```{r}
+future_data$yhat3 <- NA
+future_data$lower3 <- NA
+future_data$upper3 <- NA
+```
+
+Now we can create the forecast for the first row and update the `lag1` field of the second row with the prediction of the first row, and then repeat this process recursively:
+
+
+```{r}
+fc3_temp <- predict(
+    object = md3,
+    newdata = future_data[1, ],
+    interval = "prediction",
+    level = 0.95
+)
+
+future_data$yhat3[1] <- fc3_temp[, 1]
+future_data$lower3[1] <- fc3_temp[, 2]
+future_data$upper3[1] <- fc3_temp[, 3]
+future_data$lag1[2] <- future_data$yhat3[1]
+future_data
+```
+
+Let's generalize it with a `for` loop:
+
+```{r}
+min_lag <- 1
+
+for (i in (min_lag + 1):h) {
+    fc3_temp <- predict(
+        object = md3,
+        newdata = future_data[i, ],
+        interval = "prediction",
+        level = 0.95
+    )
+    future_data$yhat3[i] <- fc3_temp[, 1]
+    future_data$lower3[i] <- fc3_temp[, 2]
+    future_data$upper3[i] <- fc3_temp[, 3]
+    if (i < h) {
+        future_data$lag1[i + 1] <- future_data$yhat3[i]
+    }
+}
+
+future_data
+```
+
+
+Let's plot the forecast
+```{r}
+p3 |>
+    add_ribbons(
+        x = future_data$index, ymin = future_data$lower3,
+        ymax = future_data$upper3, name = "95% Prediction Interval",
+        line = list(color = "rgba(7, 164, 181, 0.05)"),
+        fillcolor = "rgba(7, 164, 181, 0.2)"
+    ) |>
+    add_lines(
+        x = future_data$index,
+        y = future_data$yhat3,
+        name = "Forecast",
+        line = list(color = "black", dash = "dash")
+    )
+```
+

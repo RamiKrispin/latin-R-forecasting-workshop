@@ -42,10 +42,12 @@ Let's reformat the data:
 
 ```{r}
 ts2 <- ts2 |>
-dplyr::mutate(month = lubridate::month(date), 
-month_label = lubridate::month(date, label = TRUE),
-year = lubridate::year(date)) |>
-dplyr::arrange(date)
+    dplyr::mutate(
+        month = lubridate::month(date),
+        month_label = lubridate::month(date, label = TRUE),
+        year = lubridate::year(date)
+    ) |>
+    dplyr::arrange(date)
 
 ts2
 ```
@@ -60,19 +62,19 @@ colors <- colorRampPalette(RColorBrewer::brewer.pal(9, "YlGnBu"))(length(years))
 p <- plot_ly()
 
 for (i in seq_along(years)) {
-  year_data <- ts2 |> filter(year == years[i])
-  
-  p <- p |>
-    add_trace(
-      data = year_data,
-      x = ~month_label,
-      y = ~y,
-      type = 'scatter',
-      mode = 'lines+markers',
-      name = as.character(years[i]),
-      line = list(color = colors[i]),
-      marker = list(color = colors[i])
-    )
+    year_data <- ts2 |> filter(year == years[i])
+
+    p <- p |>
+        add_trace(
+            data = year_data,
+            x = ~month_label,
+            y = ~y,
+            type = "scatter",
+            mode = "lines+markers",
+            name = as.character(years[i]),
+            line = list(color = colors[i]),
+            marker = list(color = colors[i])
+        )
 }
 
 
