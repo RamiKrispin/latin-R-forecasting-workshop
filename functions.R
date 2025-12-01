@@ -695,6 +695,86 @@ plot_bic_scores <- function(result) {
 }
 
 
+#' Plot Time Series with Optimal Knot Positions
+#'
+#' This function creates a plotly visualization of the time series data
+#' with vertical dashed lines indicating the optimal knot positions
+#' found by piecewise regression.
+#'
+#' @param result Output from the piecewise_regression function
+#' @param time_col Name of the time column (as string)
+#' @param value_col Name of the value column (as string)
+#'
+#' @return A plotly object showing the time series with knot positions
+#'
+#' @examples
+#' \dontrun{
+#' pw <- piecewise_regression(data = ts1, time_col = "index", value_col = "y")
+#' plot_knots(pw, time_col = "index", value_col = "y")
+#' }
+plot_knots <- function(result, time_col, value_col) {
+    # Extract data
+    data <- result$data
+    knot_dates <- result$knot_dates
+    optimal_knots <- result$optimal_knots
+
+    # Create base plot with actual values
+    p <- plotly::plot_ly() |>
+        plotly::add_trace(
+            x = data[[time_col]],
+            y = data[[value_col]],
+            type = "scatter",
+            mode = "markers",
+            marker = list(color = "#0072B5", size = 6, opacity = 0.5),
+            name = "Actual",
+            showlegend = TRUE
+        ) |>
+        plotly::add_trace(
+            x = data[[time_col]],
+            y = data$fitted,
+            type = "scatter",
+            mode = "lines",
+            line = list(color = "red", width = 2),
+            name = "Fitted (Piecewise)",
+            showlegend = TRUE
+        )
+
+    # Add vertical lines for each knot position
+    if (!is.null(knot_dates) && length(knot_dates) > 0) {
+        for (i in seq_along(knot_dates)) {
+            p <- p |>
+                plotly::add_segments(
+                    x = knot_dates[i],
+                    xend = knot_dates[i],
+                    y = min(data[[value_col]], na.rm = TRUE),
+                    yend = max(data[[value_col]], na.rm = TRUE),
+                    line = list(color = "darkgreen", dash = "dash", width = 2),
+                    name = if (i == 1) "Knots" else NULL,
+                    showlegend = if (i == 1) TRUE else FALSE,
+                    legendgroup = "knots"
+                )
+        }
+    }
+
+    # Set layout
+    p <- p |>
+        plotly::layout(
+            title = list(
+                text = sprintf("Piecewise Linear Regression<br><sub>Optimal: %d knot%s</sub>",
+                              optimal_knots,
+                              if (optimal_knots != 1) "s" else ""),
+                font = list(size = 16)
+            ),
+            xaxis = list(title = time_col),
+            yaxis = list(title = value_col),
+            hovermode = "x unified",
+            legend = list(orientation = "h", y = -0.2)
+        )
+
+    return(p)
+}
+
+
 #' Record Piecewise Regression Grid Search Animation
 #'
 #' This function is a wrapper around piecewise_regression that handles
