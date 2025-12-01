@@ -1392,3 +1392,114 @@ sim_forecast <- function(model,
 
     return(result)
 }
+
+
+#' Plot Forecast Simulations
+#'
+#' Creates a plot showing historical actual values and simulated forecast paths.
+#'
+#' @param actual_data A data frame with historical actual values
+#' @param sim_data A data frame with simulation results (output from sim_forecast)
+#' @param index_col Name of the index/time column (as string)
+#' @param actual_col Name of the actual values column (as string)
+#' @param show_intervals Logical; show prediction intervals (default: TRUE)
+#' @param interval_levels Vector of probability levels for intervals (default: c(0.5, 0.8, 0.95))
+#'
+#' @return A plotly object
+#'
+#' @examples
+#' \dontrun{
+#' sims <- sim_forecast(model, future_data, n_sims = 1000)
+#' plot_sim_forecast(actual_data = ts1, sim_data = sims,
+#'                   index_col = "index", actual_col = "y")
+#' }
+plot_sim_forecast <- function(actual_data,
+                             sim_data,
+                             index_col,
+                             actual_col,
+                             show_intervals = TRUE,
+                             interval_levels = c(0.5, 0.8, 0.95)) {
+    # Identify simulation columns
+    sim_cols <- grep("^sim_", names(sim_data), value = TRUE)
+
+    # Create base plot with actual data
+    p <- plot_ly() |>
+        add_lines(
+            x = actual_data[[index_col]],
+            y = actual_data[[actual_col]],
+            name = "Actual",
+            line = list(color = "#0072B5", width = 2),
+            showlegend = TRUE
+        )
+
+    # Add all simulation paths
+    for (sim_col in sim_cols) {
+        p <- p |>
+            add_lines(
+                x = sim_data[[index_col]],
+                y = sim_data[[sim_col]],
+                name = "Simulations",
+                line = list(color = "rgba(7, 164, 181, 0.2)", width = 1),
+                showlegend = FALSE,
+                hoverinfo = "skip"
+            )
+    }
+
+    # Add prediction intervals if requested
+    if (show_intervals) {
+        # Extract simulation matrix
+        sim_matrix <- as.matrix(sim_data[, sim_cols])
+
+        # Calculate quantiles for each row (time step)
+        interval_colors <- c(
+            "rgba(7, 164, 181, 0.1)",
+            "rgba(7, 164, 181, 0.15)",
+            "rgba(7, 164, 181, 0.2)"
+        )
+
+        # Add intervals from widest to narrowest
+        for (i in length(interval_levels):1) {
+            level <- interval_levels[i]
+            alpha_lower <- (1 - level) / 2
+            alpha_upper <- 1 - alpha_lower
+
+            lower <- apply(sim_matrix, 1, quantile, probs = alpha_lower)
+            upper <- apply(sim_matrix, 1, quantile, probs = alpha_upper)
+
+            p <- p |>
+                add_ribbons(
+                    x = sim_data[[index_col]],
+                    ymin = lower,
+                    ymax = upper,
+                    name = paste0(level * 100, "% Interval"),
+                    fillcolor = interval_colors[i],
+                    line = list(color = "transparent"),
+                    showlegend = TRUE,
+                    hoverinfo = "skip"
+                )
+        }
+
+        # Add median line
+        median_sim <- apply(sim_matrix, 1, median)
+        p <- p |>
+            add_lines(
+                x = sim_data[[index_col]],
+                y = median_sim,
+                name = "Median Forecast",
+                line = list(color = "rgba(7, 164, 181, 1)", width = 2, dash = "dash"),
+                showlegend = TRUE
+            )
+    }
+
+    # Layout
+    p <- p |>
+        layout(
+            title = "Forecast Simulations",
+            xaxis = list(title = ""),
+            yaxis = list(title = "Value"),
+            hovermode = "x unified",
+            legend = list(orientation = "h", y = -0.2)
+        )
+
+    return(p)
+}
