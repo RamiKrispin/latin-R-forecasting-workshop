@@ -1554,3 +1554,120 @@ plot_sim_forecast <- function(actual_data,
 
     return(p)
 }
+
+
+#' Generate Forecast from Linear Model
+#'
+#' Creates forecasts from a fitted linear model, handling recursive forecasting
+#' for models with lagged variables.
+#'
+#' @param model A fitted lm model object
+#' @param actual A data frame with historical actual values
+#' @param future_data A data frame with future predictor values
+#' @param actual_col Name of the actual values column (as string)
+#' @param lag_col Optional vector of lag column names for recursive forecasting (default: NULL)
+#' @param level Confidence/prediction interval level (default: 0.95)
+#'
+#' @return A list with two components:
+#'   - actual: The actual data frame with added "fitted" column
+#'   - forecast: The future data frame with "yhat", "lower", "upper" columns
+#'
+#' @examples
+#' \dontrun{
+#' # Simple model without lags
+#' result <- lm_forecast(model = md1, actual = ts1, future_data = future_data,
+#'                       actual_col = "y")
+#'
+#' # AR model with recursive forecasting
+#' result <- lm_forecast(model = md3, actual = ts1, future_data = future_data,
+#'                       actual_col = "y", lag_col = "lag1")
+#'
+#' # Multiple lags
+#' result <- lm_forecast(model = md4, actual = ts1, future_data = future_data,
+#'                       actual_col = "y", lag_col = c("lag1", "lag2"))
+#' }
+lm_forecast <- function(model,
+                       actual,
+                       future_data,
+                       actual_col,
+                       lag_col = NULL,
+                       level = 0.95) {
+    # Fit on actual data (confidence intervals)
+    fit_result <- predict(
+        object = model,
+        newdata = actual,
+        interval = "confidence",
+        level = level
+    )
+    actual$fitted <- fit_result[, 1]
+
+    # Handle forecasting
+    h <- nrow(future_data)
+
+    if (is.null(lag_col)) {
+        # No lags - straightforward prediction
+        fc_result <- predict(
+            object = model,
+            newdata = future_data,
+            interval = "prediction",
+            level = level
+        )
+
+        future_data$yhat <- fc_result[, 1]
+        future_data$lower <- fc_result[, 2]
+        future_data$upper <- fc_result[, 3]
+    } else {
+        # Recursive forecasting with lags
+        # Extract lag indices from column names
+        lag_indices <- as.numeric(gsub("lag", "", lag_col))
+        max_lag <- max(lag_indices)
+
+        # Initialize lag columns in future_data with last observations from actual
+        n_actual <- nrow(actual)
+        for (j in seq_along(lag_col)) {
+            lag_idx <- lag_indices[j]
+            # For first row: lag1 = actual[n], lag2 = actual[n-1], etc.
+            future_data[[lag_col[j]]][1] <- actual[[actual_col]][n_actual - lag_idx + 1]
+        }
+
+        # Initialize forecast columns
+        future_data$yhat <- NA
+        future_data$lower <- NA
+        future_data$upper <- NA
+
+        # Forecast each row recursively
+        for (i in 1:h) {
+            # Update lag columns for current row (if not first row)
+            if (i > 1) {
+                for (j in seq_along(lag_col)) {
+                    lag_idx <- lag_indices[j]
+                    if (i > lag_idx) {
+                        # Use previous forecast
+                        future_data[[lag_col[j]]][i] <- future_data$yhat[i - lag_idx]
+                    } else {
+                        # Use actual data
+                        future_data[[lag_col[j]]][i] <- actual[[actual_col]][n_actual - lag_idx + i]
+                    }
+                }
+            }
+
+            # Forecast current row
+            fc_temp <- predict(
+                object = model,
+                newdata = future_data[i, , drop = FALSE],
+                interval = "prediction",
+                level = level
+            )
+
+            future_data$yhat[i] <- fc_temp[, 1]
+            future_data$lower[i] <- fc_temp[, 2]
+            future_data$upper[i] <- fc_temp[, 3]
+        }
+    }
+
+    # Return list
+    return(list(
+        actual = actual,
+        forecast = future_data
+    ))
+}
