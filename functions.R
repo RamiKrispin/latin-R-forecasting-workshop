@@ -1280,13 +1280,23 @@ plot_residuals <- function(data,
         titleY = TRUE
     )
 
-    # Combine all rows
-    subplot_result <- subplot(
+    # First create subplot for actual vs fitted and residuals with shared x-axis
+    rows_1_2 <- subplot(
         p_actual_fitted,
         p_residuals,
+        nrows = 2,
+        shareX = TRUE,
+        shareY = FALSE,
+        titleY = TRUE,
+        titleX = TRUE
+    )
+
+    # Combine all rows
+    subplot_result <- subplot(
+        rows_1_2,
         row3,
-        nrows = 3,
-        heights = c(0.25, 0.25, 0.5),
+        nrows = 2,
+        heights = c(0.5, 0.5),
         shareX = FALSE,
         shareY = FALSE,
         titleY = TRUE,
