@@ -475,35 +475,19 @@ future_data
 
 
 ```{r}
-fc2 <- predict(
-    object = md2,
-    newdata = future_data,
-    interval = "prediction",
+fc2 <- lm_forecast(
+    model = md2,
+    actual = ts1,
+    future_data = future_data,
+    actual_col = "y",
+    lag_col = NULL,
     level = 0.95
 )
-
-future_data$yhat2 <- fc2[, 1]
-future_data$lower2 <- fc2[, 2]
-future_data$upper2 <- fc2[, 3]
-future_data
 ```
-
 
 Let's plot the forecast
 ```{r}
-p2 |>
-    add_ribbons(
-        x = future_data$index, ymin = future_data$lower2,
-        ymax = future_data$upper2, name = "95% Prediction Interval",
-        line = list(color = "rgba(7, 164, 181, 0.05)"),
-        fillcolor = "rgba(7, 164, 181, 0.2)"
-    ) |>
-    add_lines(
-        x = future_data$index,
-        y = future_data$yhat2,
-        name = "Forecast",
-        line = list(color = "black", dash = "dash")
-    )
+plot_lm_forecast(fc2, actual_col = "y")
 ```
 
 Looks much better! 😎
@@ -627,20 +611,23 @@ future_data
 ```
 
 
+
+
+Likewise, we can use the `lm_forecast` to create the forecast:
+
+```{r}
+fc3 <- lm_forecast(
+    model = md3,
+    actual = ts1,
+    future_data = future_data,
+    actual_col = "y",
+    lag_col = "lag1",
+    level = 0.95
+)
+```
+
 Let's plot the forecast
 ```{r}
-p3 |>
-    add_ribbons(
-        x = future_data$index, ymin = future_data$lower3,
-        ymax = future_data$upper3, name = "95% Prediction Interval",
-        line = list(color = "rgba(7, 164, 181, 0.05)"),
-        fillcolor = "rgba(7, 164, 181, 0.2)"
-    ) |>
-    add_lines(
-        x = future_data$index,
-        y = future_data$yhat3,
-        name = "Forecast",
-        line = list(color = "black", dash = "dash")
-    )
+plot_lm_forecast(fc3, actual_col = "y")
 ```
 

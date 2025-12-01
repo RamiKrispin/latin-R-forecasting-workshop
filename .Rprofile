@@ -1,3 +1,4 @@
+source("renv/activate.R")
 # Source: https://renkun.me/2020/04/14/writing-r-in-vscode-working-with-multiple-r-sessions/
 Sys.setenv(TERM_PROGRAM = "vscode")
 source(file.path(

@@ -1671,3 +1671,122 @@ lm_forecast <- function(model,
         forecast = future_data
     ))
 }
+
+
+#' Plot Linear Model Forecast
+#'
+#' Creates a plot showing historical actual values, fitted values, and forecasts
+#' with prediction intervals.
+#'
+#' @param result Output from the lm_forecast function (a list with 'actual' and 'forecast' components)
+#' @param actual_col Name of the actual values column (as string)
+#'
+#' @return A plotly object
+#'
+#' @examples
+#' \dontrun{
+#' fc <- lm_forecast(model = md2, actual = ts1, future_data = future_data,
+#'                   actual_col = "y")
+#' plot_lm_forecast(fc, actual_col = "y")
+#' }
+plot_lm_forecast <- function(result, actual_col) {
+    # Extract index column name from tsibble attributes
+    index_col <- as.character(attributes(result$actual)$index)
+
+    # Get data
+    actual_data <- result$actual
+    forecast_data <- result$forecast
+
+    # Calculate residuals for color-coding fitted values
+    actual_data$residuals <- actual_data[[actual_col]] - actual_data$fitted
+    sd_res <- sd(actual_data$residuals, na.rm = TRUE)
+
+    # Classify fitted values based on residual magnitude
+    actual_data$residual_category <- ifelse(abs(actual_data$residuals) < 2 * sd_res, "normal",
+                                            ifelse(abs(actual_data$residuals) < 3 * sd_res, "medium", "high"))
+
+    # Create base plot with actual values
+    p <- plot_ly() |>
+        add_lines(
+            x = actual_data[[index_col]],
+            y = actual_data[[actual_col]],
+            name = "Actual",
+            line = list(color = "#1f77b4"),
+            showlegend = TRUE
+        )
+
+    # Add fitted values with color-coding (using only normal color)
+    normal_idx <- which(actual_data$residual_category == "normal")
+    if (length(normal_idx) > 0) {
+        p <- p |>
+            add_trace(
+                x = actual_data[[index_col]][normal_idx],
+                y = actual_data$fitted[normal_idx],
+                type = "scatter",
+                mode = "markers",
+                marker = list(color = "rgba(135, 206, 250, 0.6)", size = 6),
+                name = "Fitted",
+                showlegend = TRUE
+            )
+    }
+
+    # Add medium outliers (if any)
+    medium_idx <- which(actual_data$residual_category == "medium")
+    if (length(medium_idx) > 0) {
+        p <- p |>
+            add_trace(
+                x = actual_data[[index_col]][medium_idx],
+                y = actual_data$fitted[medium_idx],
+                type = "scatter",
+                mode = "markers",
+                marker = list(color = "rgba(135, 206, 250, 0.6)", size = 6),
+                showlegend = FALSE
+            )
+    }
+
+    # Add high outliers (if any)
+    high_idx <- which(actual_data$residual_category == "high")
+    if (length(high_idx) > 0) {
+        p <- p |>
+            add_trace(
+                x = actual_data[[index_col]][high_idx],
+                y = actual_data$fitted[high_idx],
+                type = "scatter",
+                mode = "markers",
+                marker = list(color = "rgba(135, 206, 250, 0.6)", size = 6),
+                showlegend = FALSE
+            )
+    }
+
+    # Add prediction interval ribbon
+    p <- p |>
+        add_ribbons(
+            x = forecast_data[[index_col]],
+            ymin = forecast_data$lower,
+            ymax = forecast_data$upper,
+            name = "95% PI",
+            line = list(color = "rgba(7, 164, 181, 0.05)"),
+            fillcolor = "rgba(7, 164, 181, 0.2)",
+            showlegend = TRUE
+        )
+
+    # Add forecast line
+    p <- p |>
+        add_lines(
+            x = forecast_data[[index_col]],
+            y = forecast_data$yhat,
+            name = "Forecast",
+            line = list(color = "black", dash = "dash"),
+            showlegend = TRUE
+        )
+
+    # Set layout
+    p <- p |>
+        layout(
+            yaxis = list(title = "Value"),
+            xaxis = list(title = ""),
+            legend = list(orientation = "h", xanchor = "center", x = 0.5, y = -0.2)
+        )
+
+    return(p)
+}

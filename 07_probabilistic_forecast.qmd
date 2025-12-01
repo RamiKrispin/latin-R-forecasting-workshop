@@ -1,0 +1,108 @@
+---
+title: "Probabilistic Forecast"
+author: "Rami Krispin"
+date: last-modified
+format: 
+    html:
+        code-fold: false
+        warning: false
+        toc: true
+---
+
+We can leverage the coefficients distribution to create a probabilistic forecast.
+
+
+## Forecast Simulation Using Coefficient Uncertainty
+
+The simulation-based forecasting approach accounts for uncertainty in model parameters by treating each estimated coefficient as a random variable rather than a fixed value. When fitting a linear regression model, we obtain not only point estimates for each coefficient but also their standard errors, which quantify the uncertainty in those estimates. Under standard regression assumptions, each coefficient follows a normal distribution centered at its estimated value with a spread determined by its standard error. For each simulation path, we randomly draw a complete set of coefficients from these normal distributions: $\beta_i \sim N(\hat{\beta}_i, SE(\hat{\beta}_i))$, where $\hat{\beta}_i$ is the estimated coefficient and $SE(\hat{\beta}_i)$ is its standard error. This creates a plausible alternative version of the model that reflects our uncertainty about the true parameter values.
+
+Once we have a set of simulated coefficients, we apply them to the future predictor values to generate forecasts. For each time step in the forecast horizon, we calculate the prediction as $\hat{y}_t = X_t \times \beta_{sim}$, where $X_t$ is the row of the model matrix containing the predictor values (including the intercept, trend, dummy variables, etc.) and $\beta_{sim}$ is our vector of simulated coefficients. If residual error is included (controlled by the `add_residual_error` parameter), we also add a random draw from $N(0, \sigma)$, where $\sigma$ is the model's residual standard error, capturing the irreducible random variation in the data. For models with lagged dependent variables (AR models), the process becomes recursive: the prediction for time $t$ is used as the lagged value for time $t+1$, propagating both coefficient uncertainty and random error through the forecast horizon. By repeating this process many times (typically 1,000+ simulations), we build up a distribution of possible future outcomes, which can be visualized as a "cloud" of paths and summarized using prediction intervals.
+
+
+Let's retrain the forecasting model with from the previous notebook:
+
+```{r}
+#| label: setup
+library(feasts)
+library(fabletools)
+library(tsibble)
+library(dplyr)
+library(plotly)
+
+source("./functions.R")
+```
+
+```{r}
+#| label: load the data
+
+load(file = "./data/ts.RData")
+```
+
+Create the features:
+
+```{r}
+ts2$trend <- 1:nrow(ts2)
+ts2$month <- lubridate::month(ts2$index, label = TRUE)
+ts2$structural_break <- ifelse(ts2$date >= as.Date("2018-09-01"), 1, 0)
+ts2$outlier_high <- ifelse(ts2$date == as.Date("2025-01-01"), 1, 0)
+outlier_medium_dates <- c(as.Date("2014-01-01"), as.Date("2018-01-01"), as.Date("2019-01-01"), as.Date("2022-01-01"), as.Date("2024-01-01"))
+ts2$outlier_medium <- ifelse(ts2$date %in% outlier_medium_dates, 1, 0)
+
+```
+
+Train the forecasting model
+```{r}
+md4 <- lm(y ~ trend + month + structural_break + outlier_high + outlier_medium, data = ts2)
+
+fit4 <- predict(object = md4, newdata = ts2, interval = "confidence", level = 0.95)
+ts2$fit4 <- fit4[, 1]
+
+```
+
+```{r}
+#| fig-width: 15
+#| fig-height: 18
+plot_residuals(
+    data = ts2,
+    index_col = "date",
+    actual_col = "y",
+    fitted_col = "fit4",
+    lag_max = 60,
+    alpha = 0.05,
+    frequency = 12
+)
+```
+
+Create the future data frame:
+```{r}
+h <- 5 * 12
+future_data <- new_data(ts2, n = h)
+trend_start <- max(ts2$trend) + 1
+future_data$trend <- trend_start:(trend_start + h - 1)
+future_data$month <- lubridate::month(future_data$index, label = TRUE)
+future_data$structural_break <- 1
+future_data$outlier_medium <- 0
+future_data$outlier_high <- 0
+future_data |> head()
+```
+
+
+Let's now create the simulation using the `sim_forecast` function:
+```{r}
+sim <- sim_forecast(
+    model = md4,
+    future_data = future_data,
+    n_sims = 50,
+    seed = 1234
+)
+```
+
+
+```{r}
+plot_sim_forecast(
+    actual_data = ts2,
+    sim_data = sim,
+    index_col = "index",
+    actual_col = "y"
+)
+```
