@@ -1306,3 +1306,89 @@ plot_residuals <- function(data,
 
     return(subplot_result)
 }
+
+
+#' Simulate Forecast Paths Using Coefficient Uncertainty
+#'
+#' Creates forecast simulations by randomly drawing coefficients from their
+#' estimated distributions and applying them to future data. Supports recursive
+#' forecasting for models with lagged variables.
+#'
+#' @param model An lm model object
+#' @param future_data A data frame with future predictor values
+#' @param n_sims Number of simulation paths to generate (default: 1000)
+#' @param add_residual_error Logical; add random residual error to predictions (default: TRUE)
+#' @param lag_col Optional; name of lag column for recursive forecasting (default: NULL)
+#' @param seed Optional; random seed for reproducibility (default: NULL)
+#'
+#' @return A data frame with future_data plus columns sim_1, sim_2, ..., sim_n
+#'
+#' @examples
+#' \dontrun{
+#' # Simple model without lags
+#' result <- sim_forecast(model, future_data, n_sims = 1000)
+#'
+#' # AR model with recursive forecasting
+#' result <- sim_forecast(model, future_data, n_sims = 1000, lag_col = "lag1")
+#' }
+sim_forecast <- function(model,
+                        future_data,
+                        n_sims = 1000,
+                        add_residual_error = TRUE,
+                        lag_col = NULL,
+                        seed = NULL) {
+    # Set seed for reproducibility
+    if (!is.null(seed)) {
+        set.seed(seed)
+    }
+
+    # Extract coefficient estimates and standard errors
+    coef_summary <- summary(model)$coefficients
+    coef_mean <- coef_summary[, "Estimate"]
+    coef_se <- coef_summary[, "Std. Error"]
+
+    # Get residual standard error
+    sigma <- summary(model)$sigma
+
+    # Initialize result data frame (copy future_data)
+    result <- future_data
+
+    # Run simulations
+    for (sim in 1:n_sims) {
+        # Draw random coefficients from N(mean, sd)
+        sim_coefs <- rnorm(length(coef_mean), mean = coef_mean, sd = coef_se)
+        names(sim_coefs) <- names(coef_mean)
+
+        # Make a copy of future_data for this simulation (for recursive forecasting)
+        sim_data <- future_data
+
+        # Create prediction vector
+        predictions <- numeric(nrow(future_data))
+
+        # Make predictions for each time step
+        for (i in 1:nrow(future_data)) {
+            # Update lag column if needed (recursive forecasting)
+            if (!is.null(lag_col) && i > 1) {
+                sim_data[[lag_col]][i] <- predictions[i - 1]
+            }
+
+            # Create model matrix for this row
+            X_row <- model.matrix(delete.response(terms(model)), data = sim_data[i, , drop = FALSE])
+
+            # Calculate prediction: X * beta
+            pred_value <- as.numeric(X_row %*% sim_coefs)
+
+            # Add residual error if requested
+            if (add_residual_error) {
+                pred_value <- pred_value + rnorm(1, mean = 0, sd = sigma)
+            }
+
+            predictions[i] <- pred_value
+        }
+
+        # Add to result data frame
+        result[[paste0("sim_", sim)]] <- predictions
+    }
+
+    return(result)
+}
