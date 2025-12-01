@@ -1059,6 +1059,7 @@ record_piecewise_search <- function(data,
 #' @param actual_col Name of the actual values column (as string)
 #' @param fitted_col Name of the fitted values column (as string)
 #' @param lag_max Maximum number of lags for ACF plot (default: 60)
+#' @param frequency Frequency for seasonal ACF highlighting (default: NULL)
 #' @param alpha Significance level for confidence intervals (default: 0.05)
 #'
 #' @return A plotly subplot object with residual diagnostic plots
@@ -1067,6 +1068,7 @@ plot_residuals <- function(data,
                           actual_col,
                           fitted_col,
                           lag_max = 60,
+                          frequency = NULL,
                           alpha = 0.05) {
     # Calculate residuals
     data$residuals <- data[[actual_col]] - data[[fitted_col]]
@@ -1151,16 +1153,50 @@ plot_residuals <- function(data,
     # Calculate confidence interval (use length of clean residuals)
     ci <- qnorm(1 - alpha / 2) / sqrt(length(residuals_clean))
 
-    p_acf <- plot_ly(type = "bar") |>
-        add_trace(
-            x = acf_data$lag, y = acf_data$acf,
-            marker = list(
-                color = "#0072B5",
-                line = list(color = "rgb(8,48,107)", width = 1.5)
-            ),
-            name = "ACF",
-            showlegend = FALSE
-        ) |>
+    p_acf <- plot_ly(type = "bar")
+
+    # Handle frequency for seasonal/non-seasonal split
+    if (!is.null(frequency)) {
+        # Identify seasonal lags
+        s <- seq(from = frequency, by = frequency, to = nrow(acf_data))
+        acf_data$seasonal <- NA
+        acf_data$non_seasonal <- acf_data$acf
+        acf_data$non_seasonal[s] <- NA
+        acf_data$seasonal[s] <- acf_data$acf[s]
+
+        p_acf <- p_acf |>
+            add_trace(
+                x = acf_data$lag, y = acf_data$non_seasonal,
+                name = "Non-seasonal",
+                marker = list(
+                    color = "#0072B5",
+                    line = list(color = "rgb(8,48,107)", width = 1.5)
+                ),
+                showlegend = FALSE
+            ) |>
+            add_trace(
+                x = acf_data$lag, y = acf_data$seasonal,
+                name = "Seasonal",
+                marker = list(
+                    color = "red",
+                    line = list(color = "rgb(8,48,107)", width = 1.5)
+                ),
+                showlegend = FALSE
+            )
+    } else {
+        p_acf <- p_acf |>
+            add_trace(
+                x = acf_data$lag, y = acf_data$acf,
+                marker = list(
+                    color = "#0072B5",
+                    line = list(color = "rgb(8,48,107)", width = 1.5)
+                ),
+                name = "ACF",
+                showlegend = FALSE
+            )
+    }
+
+    p_acf <- p_acf |>
         add_segments(
             x = min(acf_data$lag), xend = max(acf_data$lag),
             y = ci, yend = ci,
